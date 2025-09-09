@@ -143,11 +143,13 @@ def localize_instance(
 
     found_files = []
     found_related_locs = {}
+    found_function_locs = {}
     found_edit_locs = {}
     additional_artifact_loc_file = None
     additional_artifact_loc_related = None
+    additional_artifact_loc_function = None
     additional_artifact_loc_edit_location = None
-    file_traj, related_loc_trajs, edit_loc_traj = {}, [], {}
+    file_traj, related_loc_trajs, function_loc_trajs, edit_loc_traj = {}, [], [], {}
 
     # file level localization
     if args.file_level:
@@ -176,6 +178,12 @@ def localize_instance(
                         "additional_artifact_loc_related"
                     ]
                     related_loc_trajs = locs["related_loc_traj"]
+                if "found_function_locs" in locs:
+                    found_function_locs = locs["found_function_locs"]
+                    additional_artifact_loc_function = locs[
+                        "additional_artifact_loc_function"
+                    ]
+                    function_loc_trajs = locs["function_loc_traj"]
                 break
 
         if len(found_files) == 0:
@@ -282,6 +290,107 @@ def localize_instance(
                     )
                     trying_temp = 1.0  # set trying temp to 1 to get valid locs
 
+    # function-level localization (specialized for functions only)
+    if args.function_level:
+        if len(found_files) != 0:
+            trying_temp = 0  # function level always try with temp 0
+            function_loc_trajs = []
+            for _ in range(MAX_RETRIES):
+                pred_files = found_files[: args.top_n]
+                fl = LLMFL(
+                    instance_id,
+                    structure,
+                    problem_statement,
+                    args.model,
+                    args.backend,
+                    logger,
+                )
+                additional_artifact_loc_function = []
+                found_function_locs = {}
+                function_loc_traj = {}
+                if args.compress and not args.related_level_separate_file:
+                    (
+                        found_function_locs,
+                        additional_artifact_loc_function,
+                        function_loc_traj,
+                    ) = fl.localize_function_from_compressed_files(
+                        pred_files,
+                        mock=args.mock,
+                        temperature=trying_temp,
+                        keep_old_order=args.keep_old_order,
+                        compress_assign=args.compress_assign,
+                        total_lines=args.compress_assign_total_lines,
+                        prefix_lines=args.compress_assign_prefix_lines,
+                        suffix_lines=args.compress_assign_suffix_lines,
+                    )
+                    additional_artifact_loc_function = [additional_artifact_loc_function]
+                    function_loc_trajs.append(function_loc_traj)
+
+                    if check_contains_valid_loc(
+                        found_function_locs, structure=structure
+                    ):
+                        break
+
+                    logger.info(
+                        f"No valid function locations found ... retrying with higher temperature ..."
+                    )
+                    trying_temp = 1.0  # set trying temp to 1 to get valid locs
+
+                elif args.compress and args.related_level_separate_file:
+                    additional_artifact_loc_function = []
+                    found_function_locs = {fn: [] for fn in pred_files}
+                    function_loc_traj = []
+                    for i, pred_file in enumerate(pred_files):
+                        (
+                            found_function_locs_i,
+                            additional_artifact_loc_function_i,
+                            function_loc_traj_i,
+                        ) = fl.localize_function_from_compressed_files(
+                            [pred_file],
+                            mock=args.mock,
+                            temperature=trying_temp,
+                            compress_assign=args.compress_assign,
+                            total_lines=args.compress_assign_total_lines,
+                            prefix_lines=args.compress_assign_prefix_lines,
+                            suffix_lines=args.compress_assign_suffix_lines,
+                        )
+                        found_function_locs[pred_file] = found_function_locs_i[pred_file]
+                        additional_artifact_loc_function.append(
+                            additional_artifact_loc_function_i
+                        )
+                        function_loc_traj.append(function_loc_traj_i)
+                    function_loc_trajs.append(function_loc_traj)
+
+                    if check_contains_valid_loc(
+                        found_function_locs, structure=structure
+                    ):
+                        break
+                    trying_temp = 1.0  # set trying temp to 1 to get valid locs
+                else:
+                    # directly use raw code file instead of skeleton format as ablation
+                    (
+                        found_function_locs,
+                        additional_artifact_loc_function,
+                        function_loc_traj,
+                    ) = fl.localize_function_from_raw_text(
+                        pred_files,
+                        mock=args.mock,
+                        temperature=trying_temp,
+                        keep_old_order=args.keep_old_order,
+                    )
+                    additional_artifact_loc_function = [additional_artifact_loc_function]
+                    function_loc_trajs.append(function_loc_traj)
+
+                    if check_contains_valid_loc(
+                        found_function_locs, structure=structure
+                    ):
+                        break
+
+                    logger.info(
+                        f"No valid function locations found ... retrying with higher temperature ..."
+                    )
+                    trying_temp = 1.0  # set trying temp to 1 to get valid locs
+
     if args.fine_grain_line_level:
         if len(found_files) != 0:
             # Only supports the following args for now
@@ -297,7 +406,11 @@ def localize_instance(
                     logger,
                 )
                 if not args.direct_edit_loc:
-                    coarse_found_locs = found_related_locs
+                    # Use function_locs if function_level was used, otherwise use related_locs
+                    if args.function_level:
+                        coarse_found_locs = found_function_locs
+                    else:
+                        coarse_found_locs = found_related_locs
                     (
                         found_edit_locs,
                         additional_artifact_loc_edit_location,
@@ -398,6 +511,9 @@ def localize_instance(
                     "found_related_locs": found_related_locs,
                     "additional_artifact_loc_related": additional_artifact_loc_related,
                     "related_loc_traj": related_loc_trajs,
+                    "found_function_locs": found_function_locs,
+                    "additional_artifact_loc_function": additional_artifact_loc_function,
+                    "function_loc_traj": function_loc_trajs,
                     "found_edit_locs": found_edit_locs,
                     "additional_artifact_loc_edit_location": additional_artifact_loc_edit_location,
                     "edit_loc_traj": edit_loc_traj,
@@ -524,8 +640,8 @@ def check_valid_args(args):
     ), "Cannot use both file_level and start_file"
 
     assert not (
-        args.file_level and args.fine_grain_line_level and not args.related_level
-    ), "Cannot use both file_level and fine_grain_line_level without related_level"
+        args.file_level and args.fine_grain_line_level and not args.related_level and not args.function_level
+    ), "Cannot use both file_level and fine_grain_line_level without related_level or function_level"
 
     assert not (
         (not args.file_level) and (not args.start_file)
@@ -669,6 +785,7 @@ def main():
         the work, should use in combination without --file_level""",
     )
     parser.add_argument("--file_level", action="store_true")
+    parser.add_argument("--function_level", action="store_true")
     parser.add_argument("--related_level", action="store_true")
     parser.add_argument("--fine_grain_line_level", action="store_true")
     parser.add_argument("--top_n", type=int, default=3)

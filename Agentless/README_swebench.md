@@ -135,11 +135,28 @@ python agentless/fl/localize.py --related_level \
 
 This will save the related elements in `results/swe-bench-lite/related_elements/loc_outputs.jsonl` with the logs saved in `results/swe-bench-lite/related_elements/localization_logs`
 
+#### 2.5. localize to functions (alternative to related elements)
+
+As an alternative to localizing to related elements, you can specifically target function-level localization, which focuses exclusively on identifying relevant functions:
+
+```shell
+python agentless/fl/localize.py --function_level \
+                                --output_folder results/swe-bench-lite/function_elements \
+                                --top_n 3 \
+                                --compress_assign \
+                                --compress \
+                                --start_file results/swe-bench-lite/file_level_combined/combined_locs.jsonl \
+                                --num_threads 10 \
+                                --skip_existing 
+```
+
+This will save the function locations in `results/swe-bench-lite/function_elements/loc_outputs.jsonl` with the logs saved in `results/swe-bench-lite/function_elements/localization_logs`
+
 #### 3. localize to edit locations
 
-Finally, using the related elements, we then localize to the edit locations. This is done via sampling to obtain multiple different sets of edit locations:
+Finally, using the related elements (or function elements), we then localize to the edit locations. This is done via sampling to obtain multiple different sets of edit locations:
 
-
+**Using related elements:**
 ```shell
 python agentless/fl/localize.py --fine_grain_line_level \
                                 --output_folder results/swe-bench-lite/edit_location_samples \
@@ -148,6 +165,19 @@ python agentless/fl/localize.py --fine_grain_line_level \
                                 --temperature 0.8 \
                                 --num_samples 4 \
                                 --start_file results/swe-bench-lite/related_elements/loc_outputs.jsonl \
+                                --num_threads 10 \
+                                --skip_existing 
+```
+
+**Or using function elements:**
+```shell
+python agentless/fl/localize.py --fine_grain_line_level \
+                                --output_folder results/swe-bench-lite/edit_location_samples \
+                                --top_n 3 \
+                                --compress \
+                                --temperature 0.8 \
+                                --num_samples 4 \
+                                --start_file results/swe-bench-lite/function_elements/loc_outputs.jsonl \
                                 --num_threads 10 \
                                 --skip_existing 
 ```
