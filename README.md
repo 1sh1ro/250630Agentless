@@ -13,7 +13,14 @@ export PYTHONPATH=$PYTHONPATH:$(pwd)
 
 export DEEPSEEK_API_KEY={key_here}
 ```
-command
+command examples:
+
+File-level localization:
 ```python
 python -m agentless.fl.localize --file_level --output_folder ./root/Agentless/agentless/results/linux_final --dataset /root/Agentless/datasets.jsonl --model deepseek-coder --hierarchical --target_subdirectories fs net drivers kernel --top_n 5 --num_threads 1
+```
+
+Function-level localization:
+```python
+python -m agentless.fl.localize --function_level --output_folder ./results/function_level --dataset /root/Agentless/datasets.jsonl --model deepseek-coder --start_file ./results/file_level/loc_outputs.jsonl --top_n 5 --compress --num_threads 1
 ```
